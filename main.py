@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QEvent, QTimer, Qt
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -104,8 +104,8 @@ class MacroWindow(QMainWindow):
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.resize(860, 610)
-        self.setMinimumSize(840, 580)
+        self.resize(910, 650)
+        self.setMinimumSize(880, 610)
 
         root = QWidget()
         root.setObjectName("window_root")
@@ -135,6 +135,11 @@ class MacroWindow(QMainWindow):
 
         self.root_layout.addWidget(self.sidebar, 1)
         self.root_layout.addWidget(self.content_shell, 4)
+
+
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
 
         self._build_sidebar()
         self._build_content()
@@ -412,24 +417,18 @@ class MacroWindow(QMainWindow):
         if isinstance(btn, QPushButton):
             btn.setText("Press key/mouse...")
 
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
-        key_name = self._event_key_name(event)
-        if not key_name:
-            super().keyPressEvent(event)
-            return
+    def eventFilter(self, obj, event):  # type: ignore[override]
+        if event.type() == QEvent.KeyPress:
+            key_name = self._event_key_name(event)
+            if self.capture_target and key_name:
+                self._set_capture_value(self.capture_target, key_name.lower())
+                return True
 
-        if self.capture_target:
-            self._set_capture_value(self.capture_target, key_name.lower())
-            return
+            if key_name and key_name.upper() == str(self.single_anchor["bind"]).upper() and self.isActiveWindow():
+                self._start_single_anchor_macro()
+                return True
 
-        if key_name.upper() == str(self.single_anchor["bind"]).upper():
-            self._start_single_anchor_macro()
-            return
-
-        super().keyPressEvent(event)
-
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        if self.capture_target:
+        if event.type() == QEvent.MouseButtonPress and self.capture_target:
             mapping = {
                 Qt.LeftButton: "left",
                 Qt.RightButton: "right",
@@ -437,7 +436,14 @@ class MacroWindow(QMainWindow):
             }
             if event.button() in mapping:
                 self._set_capture_value(self.capture_target, mapping[event.button()])
-                return
+                return True
+
+        return super().eventFilter(obj, event)
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        super().keyPressEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
         super().mousePressEvent(event)
 
     def _set_capture_value(self, target: str, value: str) -> None:
