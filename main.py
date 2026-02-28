@@ -1,7 +1,7 @@
 import sys
 from typing import Dict, List, Tuple
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -13,10 +13,17 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QScrollArea,
+    QSlider,
+    QSpinBox,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
+
+try:
+    import pyautogui
+except Exception:  # pragma: no cover
+    pyautogui = None
 
 THEMES: Dict[str, Dict[str, str]] = {
     "Ice": {
@@ -118,6 +125,20 @@ class MacroWindow(QMainWindow):
         self.current_tab = "Crystal"
         self.selected_card: QFrame | None = None
         self.nav_buttons: Dict[str, QPushButton] = {}
+
+        self.single_anchor = {
+            "bind": "F",
+            "delay": 50,
+            "place": "right",
+            "anchor_slot": 5,
+            "glow_slot": 6,
+            "totem_slot": 8,
+        }
+        self.single_anchor_widgets: Dict[str, QWidget] = {}
+        self.capture_target: str | None = None
+        self.macro_steps: List[Tuple[int, str]] = []
+        self.step_timer = QTimer(self)
+        self.step_timer.timeout.connect(self._run_single_anchor_step)
 
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -255,6 +276,9 @@ class MacroWindow(QMainWindow):
 
     def _make_card(self, data: Tuple[str, str, str, List[str]]) -> QFrame:
         abbr, title, desc, fields = data
+        if self.current_tab == "Crystal" and title == "Single Anchor":
+            return self._make_single_anchor_card(abbr, title, desc)
+
         card = QFrame()
         card.setProperty("macro_card", True)
         card_layout = QVBoxLayout(card)
@@ -285,21 +309,216 @@ class MacroWindow(QMainWindow):
         for field in fields:
             row = QHBoxLayout()
             row.setSpacing(8)
-
-            field_label = QLabel(field)
-            field_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            row.addWidget(field_label)
+            row.addWidget(QLabel(field), 1)
 
             placeholder = QPushButton("None")
             placeholder.setProperty("pill", True)
             placeholder.setFixedSize(86, 22)
             placeholder.clicked.connect(lambda _=False, c=card, f=field: self._activate(c, f))
             row.addWidget(placeholder)
-
             card_layout.addLayout(row)
 
         self._set_glow(card, self.colors()["accent"], 16, 60)
         return card
+
+    def _make_single_anchor_card(self, abbr: str, title: str, desc: str) -> QFrame:
+        card = QFrame()
+        card.setProperty("macro_card", True)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(10, 10, 10, 10)
+        card_layout.setSpacing(7)
+
+        top_row = QHBoxLayout()
+        badge = QLabel(abbr)
+        badge.setProperty("badge", True)
+        top_row.addWidget(badge)
+
+        text_col = QVBoxLayout()
+        t = QLabel(title)
+        t.setProperty("card_title", True)
+        d = QLabel(desc)
+        d.setProperty("card_desc", True)
+        text_col.addWidget(t)
+        text_col.addWidget(d)
+        top_row.addLayout(text_col, 1)
+        card_layout.addLayout(top_row)
+
+        bind_row = QHBoxLayout()
+        bind_row.addWidget(QLabel("Macro Bind"), 1)
+        bind_btn = QPushButton(self.single_anchor["bind"])
+        bind_btn.setProperty("pill", True)
+        bind_btn.clicked.connect(lambda: self._arm_capture("bind"))
+        bind_row.addWidget(bind_btn)
+        card_layout.addLayout(bind_row)
+
+        delay_row = QHBoxLayout()
+        delay_row.addWidget(QLabel("Delay"), 1)
+        delay_value = QLabel(f"{self.single_anchor['delay']} ms")
+        delay_value.setObjectName("delay_label")
+        delay_row.addWidget(delay_value)
+        card_layout.addLayout(delay_row)
+
+        delay_slider = QSlider(Qt.Horizontal)
+        delay_slider.setMinimum(0)
+        delay_slider.setMaximum(500)
+        delay_slider.setValue(int(self.single_anchor["delay"]))
+        delay_slider.valueChanged.connect(self._update_single_anchor_delay)
+        card_layout.addWidget(delay_slider)
+
+        place_row = QHBoxLayout()
+        place_row.addWidget(QLabel("Place Keybind"), 1)
+        place_btn = QPushButton(self._format_place(self.single_anchor["place"]))
+        place_btn.setProperty("pill", True)
+        place_btn.clicked.connect(lambda: self._arm_capture("place"))
+        place_row.addWidget(place_btn)
+        card_layout.addLayout(place_row)
+
+        card_layout.addLayout(self._slot_row("Anchor Slot", "anchor_slot"))
+        card_layout.addLayout(self._slot_row("Glowstone Slot", "glow_slot"))
+        card_layout.addLayout(self._slot_row("Totem Slot", "totem_slot"))
+
+        run_btn = QPushButton("Run Single Anchor")
+        run_btn.clicked.connect(self._start_single_anchor_macro)
+        card_layout.addWidget(run_btn)
+
+        hint = QLabel("Sequence: Anchor Slot → Place → Glowstone Slot → Place → Totem Slot → Place")
+        hint.setProperty("card_desc", True)
+        card_layout.addWidget(hint)
+
+        self.single_anchor_widgets = {
+            "bind_btn": bind_btn,
+            "place_btn": place_btn,
+            "delay_label": delay_value,
+            "delay_slider": delay_slider,
+        }
+
+        self._set_glow(card, self.colors()["accent"], 16, 60)
+        return card
+
+    def _slot_row(self, label: str, slot_key: str) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.addWidget(QLabel(label), 1)
+        spin = QSpinBox()
+        spin.setMinimum(1)
+        spin.setMaximum(9)
+        spin.setValue(int(self.single_anchor[slot_key]))
+        spin.valueChanged.connect(lambda value, k=slot_key: self.single_anchor.__setitem__(k, value))
+        row.addWidget(spin)
+        return row
+
+    def _update_single_anchor_delay(self, value: int) -> None:
+        self.single_anchor["delay"] = value
+        delay_label = self.single_anchor_widgets.get("delay_label")
+        if isinstance(delay_label, QLabel):
+            delay_label.setText(f"{value} ms")
+
+    def _arm_capture(self, target: str) -> None:
+        self.capture_target = target
+        if target == "bind":
+            cast = self.single_anchor_widgets.get("bind_btn")
+            if isinstance(cast, QPushButton):
+                cast.setText("Press key...")
+        if target == "place":
+            cast = self.single_anchor_widgets.get("place_btn")
+            if isinstance(cast, QPushButton):
+                cast.setText("Press key/mouse...")
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        key_name = self._event_key_name(event)
+        if not key_name:
+            super().keyPressEvent(event)
+            return
+
+        if self.capture_target == "bind":
+            self.single_anchor["bind"] = key_name
+            btn = self.single_anchor_widgets.get("bind_btn")
+            if isinstance(btn, QPushButton):
+                btn.setText(key_name)
+            self.capture_target = None
+            return
+
+        if self.capture_target == "place":
+            self.single_anchor["place"] = key_name.lower()
+            btn = self.single_anchor_widgets.get("place_btn")
+            if isinstance(btn, QPushButton):
+                btn.setText(self._format_place(self.single_anchor["place"]))
+            self.capture_target = None
+            return
+
+        if key_name.upper() == str(self.single_anchor["bind"]).upper():
+            self._start_single_anchor_macro()
+            return
+
+        super().keyPressEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if self.capture_target == "place":
+            mapping = {
+                Qt.LeftButton: "left",
+                Qt.RightButton: "right",
+                Qt.MiddleButton: "middle",
+            }
+            if event.button() in mapping:
+                self.single_anchor["place"] = mapping[event.button()]
+                btn = self.single_anchor_widgets.get("place_btn")
+                if isinstance(btn, QPushButton):
+                    btn.setText(self._format_place(self.single_anchor["place"]))
+                self.capture_target = None
+                return
+        super().mousePressEvent(event)
+
+    def _event_key_name(self, event) -> str:
+        text = event.text().strip()
+        if text:
+            return text.upper()
+        special = {
+            Qt.Key_Control: "CTRL",
+            Qt.Key_Shift: "SHIFT",
+            Qt.Key_Alt: "ALT",
+            Qt.Key_Space: "SPACE",
+        }
+        return special.get(event.key(), "")
+
+    def _start_single_anchor_macro(self) -> None:
+        if self.step_timer.isActive():
+            return
+        self.macro_steps = [
+            (int(self.single_anchor["anchor_slot"]), str(self.single_anchor["place"])),
+            (int(self.single_anchor["glow_slot"]), str(self.single_anchor["place"])),
+            (int(self.single_anchor["totem_slot"]), str(self.single_anchor["place"])),
+        ]
+        self._run_single_anchor_step()
+
+    def _run_single_anchor_step(self) -> None:
+        if not self.macro_steps:
+            self.step_timer.stop()
+            return
+
+        slot, place_key = self.macro_steps.pop(0)
+        self._perform_macro_step(slot, place_key)
+
+        if self.macro_steps:
+            self.step_timer.start(int(self.single_anchor["delay"]))
+
+    def _perform_macro_step(self, slot: int, place_key: str) -> None:
+        slot_key = str(slot) if slot < 10 else "0"
+        if pyautogui is None:
+            print(f"Single Anchor step -> slot {slot_key}, place: {place_key}")
+            return
+
+        try:
+            pyautogui.press(slot_key)
+            if place_key in {"left", "right", "middle"}:
+                pyautogui.click(button=place_key)
+            else:
+                pyautogui.press(place_key)
+        except Exception as exc:  # pragma: no cover
+            print(f"Macro execution failed: {exc}")
+
+    @staticmethod
+    def _format_place(value: str) -> str:
+        mapping = {"left": "LMB", "right": "RMB", "middle": "MMB"}
+        return mapping.get(value.lower(), value.upper())
 
     def _activate(self, card: QFrame, source: str) -> None:
         if self.selected_card is not None:
@@ -407,6 +626,24 @@ class MacroWindow(QMainWindow):
             }}
             QPushButton:hover {{
                 border: 1px solid {c['accent']};
+            }}
+            QSpinBox {{
+                background: {c['pill']};
+                border: 1px solid {c['pill_border']};
+                border-radius: 7px;
+                padding: 2px 6px;
+                max-width: 86px;
+            }}
+            QSlider::groove:horizontal {{
+                background: {c['pill']};
+                height: 6px;
+                border-radius: 3px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {c['accent']};
+                width: 12px;
+                margin: -4px 0;
+                border-radius: 6px;
             }}
             QPushButton[pill='true'] {{
                 background: {c['pill']};
