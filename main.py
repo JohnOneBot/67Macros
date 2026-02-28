@@ -1,8 +1,8 @@
 import sys
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -13,40 +13,43 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 THEMES: Dict[str, Dict[str, str]] = {
-    "Arctic": {
-        "window": "#0A121E",
-        "panel": "#0F1C2E",
-        "panel_soft": "#14263C",
-        "card": "#162E4A",
-        "card_border": "#2F5C86",
-        "text": "#EAF7FF",
-        "muted": "#9FC2DD",
-        "accent": "#3FDBFF",
-        "accent_alt": "#27B9DF",
-        "input": "#1F3D5D",
-        "input_border": "#3F6D94",
+    "Ice": {
+        "window": "#0d131a",
+        "sidebar": "#0f1720",
+        "content": "#111a24",
+        "card": "#273341",
+        "card_soft": "#1f2935",
+        "card_border": "#3e4f62",
+        "text": "#edf4ff",
+        "muted": "#a8b8c8",
+        "accent": "#7dd6ff",
+        "accent_soft": "#254053",
+        "pill": "#2f3d4e",
+        "pill_border": "#4a5f78",
     },
-    "Neon Violet": {
-        "window": "#180D1E",
-        "panel": "#24152F",
-        "panel_soft": "#2B1C38",
-        "card": "#322045",
-        "card_border": "#72459C",
-        "text": "#F9EEFF",
-        "muted": "#D3B8E6",
-        "accent": "#E27AFF",
-        "accent_alt": "#B95BDB",
-        "input": "#442E59",
-        "input_border": "#8357A3",
+    "Graphite": {
+        "window": "#101214",
+        "sidebar": "#14181c",
+        "content": "#161d24",
+        "card": "#222a32",
+        "card_soft": "#1b222a",
+        "card_border": "#3a4652",
+        "text": "#e8edf3",
+        "muted": "#a5b2bf",
+        "accent": "#79cff1",
+        "accent_soft": "#2a3b47",
+        "pill": "#2a333d",
+        "pill_border": "#485665",
     },
 }
 
-CARDS_BY_TAB = {
+CARDS_BY_TAB: Dict[str, List[Tuple[str, str, str, List[str]]]] = {
     "Crystal": [
         ("HC", "Hit Crystal", "Auto place obsidian and hit crystal", ["Keybind", "Delay", "Crystal Slot", "Obsidian Slot"]),
         ("SA", "Single Anchor", "Auto place and explode an anchor", ["Keybind", "Delay", "Anchor Slot", "Glowstone Slot", "Totem/Explode Slot"]),
@@ -63,217 +66,222 @@ CARDS_BY_TAB = {
     ],
 }
 
+ICONS = {"Crystal": "◇", "Mace": "✛", "Sword": "✦", "Themes": "◌"}
+
 
 class MacroWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.current_theme = "Arctic"
+        self.current_theme = "Ice"
         self.current_tab = "Crystal"
-        self.nav_buttons: Dict[str, QPushButton] = {}
         self.selected_card: QFrame | None = None
+        self.nav_buttons: Dict[str, QPushButton] = {}
 
-        self.setWindowTitle("67 Macros | Fuck Prestige")
-        self.resize(1366, 860)
-        self.setMinimumSize(1080, 700)
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.resize(860, 610)
+        self.setMinimumSize(840, 580)
 
-        self.central = QWidget()
-        self.setCentralWidget(self.central)
-
-        self.root_layout = QHBoxLayout(self.central)
-        self.root_layout.setContentsMargins(14, 14, 14, 14)
-        self.root_layout.setSpacing(12)
+        root = QWidget()
+        self.setCentralWidget(root)
+        self.root_layout = QHBoxLayout(root)
+        self.root_layout.setContentsMargins(10, 10, 10, 10)
+        self.root_layout.setSpacing(10)
 
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebar")
         self.sidebar_layout = QVBoxLayout(self.sidebar)
-        self.sidebar_layout.setContentsMargins(14, 14, 14, 14)
+        self.sidebar_layout.setContentsMargins(12, 12, 12, 12)
         self.sidebar_layout.setSpacing(8)
 
-        self.content = QFrame()
-        self.content.setObjectName("content")
-        self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(18, 18, 18, 18)
-        self.content_layout.setSpacing(10)
+        self.content_shell = QFrame()
+        self.content_shell.setObjectName("content_shell")
+        self.content_layout = QVBoxLayout(self.content_shell)
+        self.content_layout.setContentsMargins(14, 14, 14, 14)
+        self.content_layout.setSpacing(4)
 
         self.root_layout.addWidget(self.sidebar, 1)
-        self.root_layout.addWidget(self.content, 5)
+        self.root_layout.addWidget(self.content_shell, 4)
 
         self._build_sidebar()
         self._build_content()
+        self._render_current_tab()
         self._apply_styles()
 
-    def theme(self) -> Dict[str, str]:
+    def colors(self) -> Dict[str, str]:
         return THEMES[self.current_theme]
 
     def _build_sidebar(self) -> None:
-        self.logo = QLabel("67 Macros")
-        self.logo.setObjectName("logo")
-        self.sidebar_layout.addWidget(self.logo)
+        title = QLabel("67 Macros")
+        title.setObjectName("logo")
+        self.sidebar_layout.addWidget(title)
 
-        nav_items = [
-            ("◈ Crystal", "Crystal"),
-            ("⚒ Mace", "Mace"),
-            ("⚔ Sword", "Sword"),
-            ("◎ Themes", "Themes"),
-        ]
-        for label, key in nav_items:
-            btn = QPushButton(label)
+        for key in ["Crystal", "Mace", "Sword", "Themes"]:
+            btn = QPushButton(f"{ICONS[key]}  {key}")
             btn.setProperty("nav", True)
-            btn.clicked.connect(lambda _=False, k=key: self.switch_tab(k))
+            btn.clicked.connect(lambda _=False, k=key: self._switch_tab(k))
             self.sidebar_layout.addWidget(btn)
             self.nav_buttons[key] = btn
 
         self.sidebar_layout.addStretch(1)
 
     def _build_content(self) -> None:
-        self.title = QLabel()
-        self.title.setObjectName("title")
-        self.subtitle = QLabel()
-        self.subtitle.setObjectName("subtitle")
-        self.content_layout.addWidget(self.title)
-        self.content_layout.addWidget(self.subtitle)
+        self.header = QLabel()
+        self.header.setObjectName("header")
+        self.subheader = QLabel()
+        self.subheader.setObjectName("subheader")
+        self.content_layout.addWidget(self.header)
+        self.content_layout.addWidget(self.subheader)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
-        self.page = QWidget()
-        self.page_layout = QGridLayout(self.page)
-        self.page_layout.setContentsMargins(0, 0, 0, 0)
-        self.page_layout.setSpacing(12)
-        self.scroll.setWidget(self.page)
+        self.scroll_content = QWidget()
+        self.grid = QGridLayout(self.scroll_content)
+        self.grid.setContentsMargins(0, 8, 0, 0)
+        self.grid.setSpacing(10)
+        self.scroll.setWidget(self.scroll_content)
         self.content_layout.addWidget(self.scroll, 1)
 
-        self.render_tab()
-
     def _clear_grid(self) -> None:
-        while self.page_layout.count():
-            item = self.page_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
+        while self.grid.count():
+            child = self.grid.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
 
-    def switch_tab(self, key: str) -> None:
+    def _switch_tab(self, key: str) -> None:
         self.current_tab = key
         self.selected_card = None
-        self.render_tab()
+        self._render_current_tab()
         self._apply_styles()
 
-    def render_tab(self) -> None:
+    def _render_current_tab(self) -> None:
         self._clear_grid()
 
         if self.current_tab == "Themes":
-            self.title.setText("Themes")
-            self.subtitle.setText("Compact presets with quick apply")
-            self._render_themes()
+            self.header.setText("Themes")
+            self.subheader.setText("Small + simple presets")
+            self._render_theme_tiles()
             return
 
-        self.title.setText(f"{self.current_tab} Macros")
-        self.subtitle.setText("Configure your PvP automation")
-        cards = CARDS_BY_TAB[self.current_tab]
-        for i, card_data in enumerate(cards):
-            card = self._build_card(card_data)
-            self.page_layout.addWidget(card, i // 2, i % 2)
+        self.header.setText(f"{self.current_tab} Macros")
+        self.subheader.setText("Configure your end crystal PvP automation")
 
-    def _render_themes(self) -> None:
+        cards = CARDS_BY_TAB[self.current_tab]
+        for i, data in enumerate(cards):
+            self.grid.addWidget(self._make_card(data), i // 2, i % 2)
+
+    def _render_theme_tiles(self) -> None:
         for i, name in enumerate(THEMES.keys()):
+            colors = THEMES[name]
             tile = QFrame()
             tile.setProperty("theme_tile", True)
             row = QHBoxLayout(tile)
-            row.setContentsMargins(10, 8, 10, 8)
-            row.setSpacing(8)
+            row.setContentsMargins(8, 6, 8, 6)
+            row.setSpacing(6)
 
             label = QLabel(name)
+            label.setObjectName("theme_label")
             row.addWidget(label)
-            row.addStretch(1)
 
-            swatches = QWidget()
-            sw = QHBoxLayout(swatches)
-            sw.setContentsMargins(0, 0, 0, 0)
-            sw.setSpacing(4)
-            for key in ["window", "card", "accent", "accent_alt"]:
-                box = QFrame()
-                box.setFixedSize(18, 10)
-                box.setStyleSheet(f"background:{THEMES[name][key]}; border-radius:3px;")
-                sw.addWidget(box)
-            row.addWidget(swatches)
+            swatch_holder = QWidget()
+            swatch_row = QHBoxLayout(swatch_holder)
+            swatch_row.setContentsMargins(0, 0, 0, 0)
+            swatch_row.setSpacing(4)
+            for key in ["window", "card", "accent", "pill"]:
+                swatch = QFrame()
+                swatch.setFixedSize(14, 8)
+                swatch.setStyleSheet(f"background:{colors[key]}; border-radius:3px;")
+                swatch_row.addWidget(swatch)
+            row.addWidget(swatch_holder)
 
-            btn = QPushButton("Apply")
-            btn.clicked.connect(lambda _=False, n=name: self.apply_theme(n))
-            row.addWidget(btn)
-            self.page_layout.addWidget(tile, 0, i)
+            apply_btn = QPushButton("Apply")
+            apply_btn.setProperty("mini", True)
+            apply_btn.clicked.connect(lambda _=False, n=name: self._apply_theme(n))
+            row.addWidget(apply_btn)
 
-    def apply_theme(self, name: str) -> None:
-        self.current_theme = name
-        self._apply_styles()
-        self.render_tab()
+            self.grid.addWidget(tile, 0, i)
 
-    def _build_card(self, data: tuple) -> QFrame:
+    def _make_card(self, data: Tuple[str, str, str, List[str]]) -> QFrame:
         abbr, title, desc, fields = data
         card = QFrame()
         card.setProperty("macro_card", True)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(10, 10, 10, 10)
+        card_layout.setSpacing(6)
 
-        top = QHBoxLayout()
+        top_row = QHBoxLayout()
         badge = QLabel(abbr)
         badge.setProperty("badge", True)
-        top.addWidget(badge)
+        top_row.addWidget(badge)
 
-        info = QVBoxLayout()
-        title_lbl = QLabel(title)
-        title_lbl.setProperty("card_title", True)
-        desc_lbl = QLabel(desc)
-        desc_lbl.setProperty("card_desc", True)
-        info.addWidget(title_lbl)
-        info.addWidget(desc_lbl)
-        top.addLayout(info, 1)
+        text_col = QVBoxLayout()
+        t = QLabel(title)
+        t.setProperty("card_title", True)
+        d = QLabel(desc)
+        d.setProperty("card_desc", True)
+        text_col.addWidget(t)
+        text_col.addWidget(d)
+        top_row.addLayout(text_col, 1)
 
-        power = QPushButton("⏻")
-        power.setFixedSize(28, 28)
-        power.clicked.connect(lambda _=False, c=card, s=title: self.activate_card(c, s))
-        top.addWidget(power)
-        layout.addLayout(top)
+        power = QPushButton("◉")
+        power.setProperty("round", True)
+        power.setFixedSize(24, 24)
+        power.clicked.connect(lambda _=False, c=card, s=title: self._activate(c, s))
+        top_row.addWidget(power)
+        card_layout.addLayout(top_row)
 
         for field in fields:
             row = QHBoxLayout()
-            row.addWidget(QLabel(field), 1)
-            btn = QPushButton("PLACEHOLDER")
-            btn.setFixedSize(130, 28)
-            btn.clicked.connect(lambda _=False, c=card, f=field: self.activate_card(c, f))
-            row.addWidget(btn)
-            layout.addLayout(row)
+            row.setSpacing(8)
 
-        self._add_glow(card, self.theme()["accent"], 14, 0)
+            field_label = QLabel(field)
+            field_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            row.addWidget(field_label)
+
+            placeholder = QPushButton("None")
+            placeholder.setProperty("pill", True)
+            placeholder.setFixedSize(86, 22)
+            placeholder.clicked.connect(lambda _=False, c=card, f=field: self._activate(c, f))
+            row.addWidget(placeholder)
+
+            card_layout.addLayout(row)
+
+        self._set_glow(card, self.colors()["accent"], 16, 60)
         return card
 
-    def activate_card(self, card: QFrame, source: str) -> None:
-        if self.selected_card:
+    def _activate(self, card: QFrame, source: str) -> None:
+        if self.selected_card is not None:
             self.selected_card.setProperty("active", False)
             self.selected_card.style().unpolish(self.selected_card)
             self.selected_card.style().polish(self.selected_card)
+            self._set_glow(self.selected_card, self.colors()["accent"], 16, 60)
 
         self.selected_card = card
-        self.selected_card.setProperty("active", True)
-        self.selected_card.style().unpolish(self.selected_card)
-        self.selected_card.style().polish(self.selected_card)
-        self._add_glow(self.selected_card, self.theme()["accent"], 28, 1)
-        print(f"placeholder: {source}")
+        card.setProperty("active", True)
+        card.style().unpolish(card)
+        card.style().polish(card)
+        self._set_glow(card, self.colors()["accent"], 28, 150)
+        print(f"placeholder clicked: {source}")
 
     @staticmethod
-    def _add_glow(widget: QWidget, color: str, blur: int, alpha_boost: int) -> None:
+    def _set_glow(widget: QWidget, hex_color: str, blur: int, alpha: int) -> None:
         effect = QGraphicsDropShadowEffect(widget)
-        effect.setBlurRadius(blur)
         effect.setOffset(0, 0)
-        from PySide6.QtGui import QColor
-
-        c = QColor(color)
-        c.setAlpha(130 + alpha_boost * 60)
-        effect.setColor(c)
+        effect.setBlurRadius(blur)
+        color = QColor(hex_color)
+        color.setAlpha(alpha)
+        effect.setColor(color)
         widget.setGraphicsEffect(effect)
 
+    def _apply_theme(self, name: str) -> None:
+        self.current_theme = name
+        self.selected_card = None
+        self._render_current_tab()
+        self._apply_styles()
+
     def _apply_styles(self) -> None:
-        t = self.theme()
+        c = self.colors()
+
         for key, btn in self.nav_buttons.items():
             btn.setProperty("active", key == self.current_tab)
             btn.style().unpolish(btn)
@@ -282,97 +290,117 @@ class MacroWindow(QMainWindow):
         self.setStyleSheet(
             f"""
             QWidget {{
-                background: {t['window']};
-                color: {t['text']};
-                font-family: 'Segoe UI';
-                font-size: 13px;
+                background: {c['window']};
+                color: {c['text']};
+                font-family: 'Inter';
+                font-size: 12px;
             }}
             #sidebar {{
-                background: {t['panel']};
-                border: 1px solid {t['card_border']};
-                border-radius: 18px;
+                background: {c['sidebar']};
+                border: 1px solid #223143;
+                border-radius: 14px;
             }}
-            #content {{
-                background: {t['panel_soft']};
-                border: 1px solid {t['card_border']};
-                border-radius: 18px;
+            #content_shell {{
+                background: {c['content']};
+                border: 1px solid #2a3b4f;
+                border-radius: 14px;
             }}
             #logo {{
-                color: {t['accent']};
-                font-size: 42px;
-                font-weight: 800;
+                font-size: 26px;
+                font-weight: 700;
+                color: {c['text']};
                 background: transparent;
                 margin-bottom: 6px;
             }}
-            #title {{
+            #header {{
                 font-size: 40px;
-                font-weight: 800;
+                font-weight: 700;
+                color: {c['text']};
                 background: transparent;
             }}
-            #subtitle {{
-                color: {t['muted']};
-                font-size: 15px;
+            #subheader {{
+                font-size: 13px;
+                color: {c['muted']};
                 background: transparent;
-                margin-bottom: 8px;
+                margin-bottom: 4px;
             }}
             QPushButton[nav='true'] {{
                 text-align: left;
-                padding: 8px 10px;
-                border-radius: 10px;
-                border: 1px solid {t['input_border']};
+                border-radius: 8px;
+                border: 1px solid #2f4155;
                 background: transparent;
-                font-size: 18px;
-                font-weight: 700;
+                padding: 7px 10px;
+                font-size: 12px;
+                font-weight: 600;
             }}
             QPushButton[nav='true'][active='true'] {{
-                background: {t['accent_alt']};
-                border: 1px solid {t['accent']};
+                background: {c['accent_soft']};
+                border: 1px solid {c['accent']};
             }}
             QPushButton {{
-                border-radius: 8px;
-                border: 1px solid {t['input_border']};
-                background: {t['input']};
-                padding: 4px 10px;
-                font-weight: 700;
+                background: {c['pill']};
+                border: 1px solid {c['pill_border']};
+                border-radius: 7px;
+                padding: 3px 8px;
+                font-size: 11px;
+                font-weight: 600;
             }}
             QPushButton:hover {{
-                background: {t['accent_alt']};
-                border: 1px solid {t['accent']};
+                border: 1px solid {c['accent']};
+            }}
+            QPushButton[pill='true'] {{
+                background: {c['pill']};
+                color: {c['text']};
+            }}
+            QPushButton[mini='true'] {{
+                padding: 2px 8px;
+                min-height: 20px;
+            }}
+            QPushButton[round='true'] {{
+                border-radius: 12px;
+                padding: 0px;
             }}
             QFrame[macro_card='true'] {{
-                background: {t['card']};
-                border: 1px solid {t['card_border']};
-                border-radius: 16px;
+                background: {c['card']};
+                border: 1px solid {c['card_border']};
+                border-radius: 12px;
             }}
             QFrame[macro_card='true'][active='true'] {{
-                border: 2px solid {t['accent']};
+                border: 1px solid {c['accent']};
+                background: {c['card_soft']};
             }}
             QLabel[badge='true'] {{
-                min-width: 40px;
-                max-width: 40px;
-                min-height: 40px;
-                max-height: 40px;
-                border-radius: 12px;
-                background: {t['input']};
-                color: {t['accent']};
-                font-weight: 800;
-                font-size: 15px;
-                qproperty-alignment: 'AlignCenter';
+                background: {c['accent_soft']};
+                border: 1px solid {c['pill_border']};
+                border-radius: 10px;
+                min-width: 32px;
+                max-width: 32px;
+                min-height: 32px;
+                max-height: 32px;
+                color: {c['accent']};
+                qproperty-alignment: AlignCenter;
+                font-size: 12px;
+                font-weight: 700;
             }}
             QLabel[card_title='true'] {{
-                font-size: 30px;
-                font-weight: 800;
                 background: transparent;
+                font-size: 17px;
+                font-weight: 700;
             }}
             QLabel[card_desc='true'] {{
-                color: {t['muted']};
-                font-size: 13px;
                 background: transparent;
+                color: {c['muted']};
+                font-size: 12px;
             }}
             QFrame[theme_tile='true'] {{
-                background: {t['card']};
-                border: 1px solid {t['card_border']};
-                border-radius: 10px;
+                background: {c['card']};
+                border: 1px solid {c['card_border']};
+                border-radius: 9px;
+            }}
+            #theme_label {{
+                background: transparent;
+                font-size: 12px;
+                font-weight: 600;
             }}
             QScrollArea, QScrollArea > QWidget > QWidget {{
                 background: transparent;
@@ -380,15 +408,15 @@ class MacroWindow(QMainWindow):
             """
         )
 
-        self._add_glow(self.sidebar, t["accent"], 30, 0)
-        self._add_glow(self.content, t["accent_alt"], 20, 0)
+        self._set_glow(self.sidebar, c["accent"], 24, 50)
+        self._set_glow(self.content_shell, c["accent"], 20, 36)
 
 
 def main() -> None:
     app = QApplication(sys.argv)
-    app.setFont(QFont("Segoe UI", 11))
-    win = MacroWindow()
-    win.show()
+    app.setFont(QFont("Inter", 10))
+    window = MacroWindow()
+    window.show()
     sys.exit(app.exec())
 
 
