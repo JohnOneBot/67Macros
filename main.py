@@ -47,6 +47,48 @@ THEMES: Dict[str, Dict[str, str]] = {
         "pill": "#2a333d",
         "pill_border": "#485665",
     },
+    "Slate": {
+        "window": "#11161d",
+        "sidebar": "#131a22",
+        "content": "#18212b",
+        "card": "#232f3a",
+        "card_soft": "#1b252f",
+        "card_border": "#42515e",
+        "text": "#e7eef8",
+        "muted": "#9baebe",
+        "accent": "#8fdfff",
+        "accent_soft": "#2d4858",
+        "pill": "#2b3845",
+        "pill_border": "#4b5f72",
+    },
+    "Midnight": {
+        "window": "#0a1018",
+        "sidebar": "#0d141e",
+        "content": "#111b28",
+        "card": "#1c2a3a",
+        "card_soft": "#162230",
+        "card_border": "#36516d",
+        "text": "#e8f4ff",
+        "muted": "#9ab6d1",
+        "accent": "#69d1ff",
+        "accent_soft": "#244459",
+        "pill": "#253a4f",
+        "pill_border": "#3e6382",
+    },
+    "Frost": {
+        "window": "#0e141a",
+        "sidebar": "#121a22",
+        "content": "#1a2430",
+        "card": "#263342",
+        "card_soft": "#202b38",
+        "card_border": "#44586d",
+        "text": "#ecf5ff",
+        "muted": "#b0c1d3",
+        "accent": "#9be7ff",
+        "accent_soft": "#325060",
+        "pill": "#2d3c4b",
+        "pill_border": "#5a7086",
+    },
 }
 
 CARDS_BY_TAB: Dict[str, List[Tuple[str, str, str, List[str]]]] = {
@@ -78,13 +120,22 @@ class MacroWindow(QMainWindow):
         self.nav_buttons: Dict[str, QPushButton] = {}
 
         self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(860, 610)
         self.setMinimumSize(840, 580)
 
         root = QWidget()
+        root.setObjectName("window_root")
         self.setCentralWidget(root)
-        self.root_layout = QHBoxLayout(root)
-        self.root_layout.setContentsMargins(10, 10, 10, 10)
+        root_outer = QVBoxLayout(root)
+        root_outer.setContentsMargins(0, 0, 0, 0)
+
+        self.window_shell = QFrame()
+        self.window_shell.setObjectName("window_shell")
+        root_outer.addWidget(self.window_shell)
+
+        self.root_layout = QHBoxLayout(self.window_shell)
+        self.root_layout.setContentsMargins(12, 12, 12, 12)
         self.root_layout.setSpacing(10)
 
         self.sidebar = QFrame()
@@ -137,7 +188,7 @@ class MacroWindow(QMainWindow):
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll_content = QWidget()
         self.grid = QGridLayout(self.scroll_content)
-        self.grid.setContentsMargins(0, 8, 0, 0)
+        self.grid.setContentsMargins(4, 10, 4, 10)
         self.grid.setSpacing(10)
         self.scroll.setWidget(self.scroll_content)
         self.content_layout.addWidget(self.scroll, 1)
@@ -171,12 +222,13 @@ class MacroWindow(QMainWindow):
             self.grid.addWidget(self._make_card(data), i // 2, i % 2)
 
     def _render_theme_tiles(self) -> None:
+        self.grid.setColumnStretch(0, 1)
         for i, name in enumerate(THEMES.keys()):
             colors = THEMES[name]
             tile = QFrame()
             tile.setProperty("theme_tile", True)
             row = QHBoxLayout(tile)
-            row.setContentsMargins(8, 6, 8, 6)
+            row.setContentsMargins(10, 7, 10, 7)
             row.setSpacing(6)
 
             label = QLabel(name)
@@ -199,7 +251,7 @@ class MacroWindow(QMainWindow):
             apply_btn.clicked.connect(lambda _=False, n=name: self._apply_theme(n))
             row.addWidget(apply_btn)
 
-            self.grid.addWidget(tile, 0, i)
+            self.grid.addWidget(tile, i, 0)
 
     def _make_card(self, data: Tuple[str, str, str, List[str]]) -> QFrame:
         abbr, title, desc, fields = data
@@ -290,10 +342,18 @@ class MacroWindow(QMainWindow):
         self.setStyleSheet(
             f"""
             QWidget {{
-                background: {c['window']};
+                background: transparent;
                 color: {c['text']};
                 font-family: 'Inter';
                 font-size: 12px;
+            }}
+            #window_root {{
+                background: transparent;
+            }}
+            #window_shell {{
+                background: {c['window']};
+                border-radius: 16px;
+                border: 1px solid #223143;
             }}
             #sidebar {{
                 background: {c['sidebar']};
@@ -396,6 +456,7 @@ class MacroWindow(QMainWindow):
                 background: {c['card']};
                 border: 1px solid {c['card_border']};
                 border-radius: 9px;
+                min-height: 34px;
             }}
             #theme_label {{
                 background: transparent;
@@ -408,6 +469,7 @@ class MacroWindow(QMainWindow):
             """
         )
 
+        self._set_glow(self.window_shell, c["accent"], 26, 44)
         self._set_glow(self.sidebar, c["accent"], 24, 50)
         self._set_glow(self.content_shell, c["accent"], 20, 36)
 
